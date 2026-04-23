@@ -1,4 +1,4 @@
-#target photoshop
+﻿#target photoshop
 app.displayDialogs = DialogModes.NO;
 
 function getDateString() {

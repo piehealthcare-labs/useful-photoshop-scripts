@@ -34,6 +34,22 @@ function getParentArtboard(layer) {
     return null;
 }
 
+function getArtboardWidth(layer) {
+    try {
+        var ref = new ActionReference();
+        ref.putIdentifier(charIDToTypeID("Lyr "), layer.id);
+        var desc = executeActionGet(ref);
+        var abDesc = desc.getObjectValue(stringIDToTypeID("artboard"));
+        var rect = abDesc.getObjectValue(stringIDToTypeID("artboardRect"));
+        var left = rect.getUnitDoubleValue(stringIDToTypeID("left"));
+        var right = rect.getUnitDoubleValue(stringIDToTypeID("right"));
+        return right - left;
+    } catch (e) {
+        var bounds = layer.bounds;
+        return bounds[2].value - bounds[0].value;
+    }
+}
+
 function scaleLayerAM(layer, percent) {
     app.activeDocument.activeLayer = layer;
     var desc = new ActionDescriptor();
@@ -57,7 +73,7 @@ function processResizeWholeDocument(doc, originalUnit) {
     var currentWidth = doc.width.value;
     var currentHeight = doc.height.value;
 
-    var userInput = prompt("어떤 사이즈(가로px)로 수정하겠습니까?\n수치를 입력하시면 비율에 맞게 전체 작업물(이미지, 텍스트, 마진 등)이 조절됩니다.\n\n현재 가로 사이즈: " + Math.round(currentWidth) + "px", Math.round(currentWidth), "전체 크기 비율 조절");
+    var userInput = prompt("\uC5B4\uB5A4 \uC0AC\uC774\uC988(\uAC00\uB85Cpx)\uB85C \uC218\uC815\uD558\uACA0\uC2B5\uB2C8\uAE4C?\n\uC218\uCE58\uB97C \uC785\uB825\uD558\uC2DC\uBA74 \uBE44\uC728\uC5D0 \uB9DE\uAC8C \uC804\uCCB4 \uC791\uC5C5\uBB3C(\uC774\uBBF8\uC9C0, \uD14D\uC2A4\uD2B8, \uB9C8\uC9C4 \uB4F1)\uC774 \uC870\uC808\uB429\uB2C8\uB2E4.\n\n\uD604\uC7AC \uAC00\uB85C \uC0AC\uC774\uC988: " + Math.round(currentWidth) + "px", Math.round(currentWidth), "\uC804\uCCB4 \uD06C\uAE30 \uBE44\uC728 \uC870\uC808");
 
     if (userInput === null || userInput === "") {
         app.preferences.rulerUnits = originalUnit;
@@ -67,7 +83,7 @@ function processResizeWholeDocument(doc, originalUnit) {
     var newWidth = parseFloat(userInput);
 
     if (isNaN(newWidth) || newWidth <= 0) {
-        alert("올바른 숫자(양수)를 입력해주세요.");
+        alert("\uC62C\uBC14\uB978 \uC22B\uC790(\uC591\uC218)\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694.");
         app.preferences.rulerUnits = originalUnit;
         return;
     }
@@ -82,73 +98,31 @@ function processResizeWholeDocument(doc, originalUnit) {
 
     try {
         doc.resizeImage(UnitValue(newWidth, "px"), UnitValue(newHeight, "px"), doc.resolution, ResampleMethod.BICUBIC);
-        alert("가로 " + Math.round(newWidth) + "px 로 모든 요소의 비율 조정이 완료되었습니다.");
+        alert("\uAC00\uB85C " + Math.round(newWidth) + "px \uB85C \uBAA8\uB4E0 \uC694\uC18C\uC758 \uBE44\uC728 \uC870\uC815\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
     } catch (e) {
-        alert("사이즈 조절 중 오류가 발생했습니다: " + e.message);
+        alert("\uC0AC\uC774\uC988 \uC870\uC808 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4: " + e.message);
     } finally {
         app.preferences.rulerUnits = originalUnit;
     }
 }
 
-function processResizeSingleArtboard(doc, artboardLayer, originalUnit) {
+function showUnifiedDialogAndProcess(doc, originalUnit, artboards, targetArtboard) {
     app.preferences.rulerUnits = Units.PIXELS;
-    
-    var bounds = artboardLayer.bounds; 
-    var currentWidth = bounds[2].value - bounds[0].value;
-    
-    var userInput = prompt("선택된 아트보드: [" + artboardLayer.name + "]\n어떤 사이즈(가로px)로 수정하겠습니까?\n수치를 입력하시면 비율에 맞게 조절됩니다.\n\n현재 가로 사이즈: " + Math.round(currentWidth) + "px", Math.round(currentWidth), "아트보드 크기 비율 조절");
-
-    if (userInput === null || userInput === "") {
-        app.preferences.rulerUnits = originalUnit;
-        return;
-    }
-
-    var newWidth = parseFloat(userInput);
-
-    if (isNaN(newWidth) || newWidth <= 0) {
-        alert("올바른 숫자(양수)를 입력해주세요.");
-        app.preferences.rulerUnits = originalUnit;
-        return;
-    }
-
-    if (newWidth === currentWidth) {
-        app.preferences.rulerUnits = originalUnit;
-        return;
-    }
-
-    var percent = (newWidth / currentWidth) * 100;
-
-    try {
-        scaleLayerAM(artboardLayer, percent);
-        alert("아트보드 [" + artboardLayer.name + "] 가로 " + Math.round(newWidth) + "px 로 조절이 완료되었습니다.");
-    } catch (e) {
-        alert("사이즈 조절 중 오류가 발생했습니다: " + e.message);
-    } finally {
-        app.preferences.rulerUnits = originalUnit;
-    }
-}
-
-function showDialogAndProcess(doc, originalUnit, artboards) {
-    // 만약 사용자가 이미 특정 아트보드를 클릭(선택)해둔 상태라면, 그 아트보드를 기본값으로 선택
-    var targetArtboard = null;
-    try {
-        targetArtboard = getParentArtboard(app.activeDocument.activeLayer);
-    } catch(e) {}
-    
-    var w = new Window("dialog", "아트보드 선택");
+    var w = new Window("dialog", "\uC544\uD2B8\uBCF4\uB4DC \uD06C\uAE30 \uC870\uC808");
     w.orientation = "column";
-    w.alignChildren = "center";
+    w.alignChildren = "fill";
     w.margins = 20;
     
-    w.add("statictext", undefined, "문서에 여러 개의 아트보드가 있습니다.");
-    w.add("statictext", undefined, "크기를 조절할 아트보드를 아래 목록에서 선택해주세요.");
+    var panel1 = w.add("panel", undefined, "\uB300\uC0C1 \uC544\uD2B8\uBCF4\uB4DC");
+    panel1.orientation = "column";
+    panel1.alignChildren = "center";
+    panel1.margins = 15;
     
-    var dropdown = w.add("dropdownlist", undefined, []);
+    var dropdown = panel1.add("dropdownlist", undefined, []);
     var selectedIndex = 0;
     
     for (var i = 0; i < artboards.length; i++) {
         dropdown.add("item", artboards[i].name);
-        // 이미 캔버스에서 선택한 아트보드라면 목록에서 자동으로 활성화되게 처리
         if (targetArtboard && artboards[i].name === targetArtboard.name) {
             selectedIndex = i;
         }
@@ -156,12 +130,46 @@ function showDialogAndProcess(doc, originalUnit, artboards) {
     dropdown.selection = selectedIndex;
     dropdown.preferredSize.width = 250;
     
-    var btnGroup = w.add("group");
-    btnGroup.margins.top = 10;
-    var btnOk = btnGroup.add("button", undefined, "선택 완료");
-    var btnCancel = btnGroup.add("button", undefined, "취소");
+    var panel2 = w.add("panel", undefined, "\uC0AC\uC774\uC988 \uC218\uC815 (\uAC00\uB85C px)");
+    panel2.orientation = "column";
+    panel2.alignChildren = "center";
+    panel2.margins = 15;
     
+    var infoText = panel2.add("statictext", undefined, "\uD604\uC7AC \uAC00\uB85C \uC0AC\uC774\uC988: - px");
+    
+    var inputGroup = panel2.add("group");
+    var sizeInput = inputGroup.add("edittext", undefined, "");
+    sizeInput.preferredSize.width = 100;
+    inputGroup.add("statictext", undefined, "px");
+    
+    function updateCurrentSize() {
+        if (dropdown.selection) {
+            var ab = artboards[dropdown.selection.index];
+            var w_val = Math.round(getArtboardWidth(ab));
+            infoText.text = "\uD604\uC7AC \uAC00\uB85C \uC0AC\uC774\uC988: " + w_val + " px";
+            sizeInput.text = w_val;
+        }
+    }
+    dropdown.onChange = updateCurrentSize;
+    updateCurrentSize();
+    
+    var btnGroup = w.add("group");
+    btnGroup.alignment = "center";
+    btnGroup.margins.top = 10;
+    var btnOk = btnGroup.add("button", undefined, "\uD655\uC778", {name: "ok"});
+    var btnCancel = btnGroup.add("button", undefined, "\uCDE8\uC18C", {name: "cancel"});
+    
+    var resultWidth = null;
+    var selectedAb = null;
+
     btnOk.onClick = function() {
+        var val = parseFloat(sizeInput.text);
+        if (isNaN(val) || val <= 0) {
+            alert("\uC62C\uBC14\uB978 \uC22B\uC790(\uC591\uC218)\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694.");
+            return;
+        }
+        resultWidth = val;
+        selectedAb = artboards[dropdown.selection.index];
         w.close(1);
     };
     
@@ -169,20 +177,28 @@ function showDialogAndProcess(doc, originalUnit, artboards) {
         w.close(0);
     };
     
-    // 모달 다이얼로그 표시 (사용자가 버튼을 누를 때까지 대기)
-    var result = w.show();
+    w.onShow = function() {
+        sizeInput.active = true;
+    };
     
-    if (result === 1) {
-        var selectedArtboard = artboards[dropdown.selection.index];
-        processResizeSingleArtboard(doc, selectedArtboard, originalUnit);
-    } else {
-        app.preferences.rulerUnits = originalUnit;
+    if (w.show() === 1) {
+        var currentWidth = getArtboardWidth(selectedAb);
+        if (resultWidth !== Math.round(currentWidth)) {
+            var percent = (resultWidth / currentWidth) * 100;
+            try {
+                scaleLayerAM(selectedAb, percent);
+                alert("\uC544\uD2B8\uBCF4\uB4DC [" + selectedAb.name + "] \uAC00\uB85C " + Math.round(resultWidth) + "px \uB85C \uC870\uC808\uC774 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+            } catch(e) {
+                alert("\uC0AC\uC774\uC988 \uC870\uC808 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4: " + e.message);
+            }
+        }
     }
+    app.preferences.rulerUnits = originalUnit;
 }
 
 function main() {
     if (app.documents.length === 0) {
-        alert("열려있는 문서가 없습니다.");
+        alert("\uC5F4\uB824\uC788\uB294 \uBB38\uC11C\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.");
         return;
     }
 
@@ -192,8 +208,15 @@ function main() {
 
     var artboards = getRootArtboards(doc);
 
-    if (artboards.length > 1) {
-        showDialogAndProcess(doc, originalUnit, artboards);
+    var targetArtboard = null;
+    try {
+        if (isArtboard(doc.activeLayer)) {
+            targetArtboard = doc.activeLayer;
+        }
+    } catch(e) {}
+
+    if (artboards.length > 0) {
+        showUnifiedDialogAndProcess(doc, originalUnit, artboards, targetArtboard);
     } else {
         processResizeWholeDocument(doc, originalUnit);
     }

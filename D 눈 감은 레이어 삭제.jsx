@@ -1,4 +1,4 @@
-function deleteHiddenLayers(layerContainer) {
+﻿function deleteHiddenLayers(layerContainer) {
   for (var i = layerContainer.artLayers.length - 1; i >= 0; i--) {
     var layer = layerContainer.artLayers[i];
     if (!layer.visible) {

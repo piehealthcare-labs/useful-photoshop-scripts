@@ -1,4 +1,4 @@
-// Photoshop Artboard to Regular Canvas Script (Ultimate Fail-Proof Version)
+﻿// Photoshop Artboard to Regular Canvas Script (Ultimate Fail-Proof Version)
 // 작성자: Antigravity
 // 기능: 기존 대지를 해제하고 일반 캔버스로 변환하며 기존 폴더 구조를 유지하고 원본에 그대로 덮어쓰기 저장합니다.
 

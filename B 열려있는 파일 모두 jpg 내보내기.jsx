@@ -1,4 +1,4 @@
-#target photoshop
+﻿#target photoshop
 app.displayDialogs = DialogModes.NO;
 
 // 룰러 단위를 픽셀로 고정
