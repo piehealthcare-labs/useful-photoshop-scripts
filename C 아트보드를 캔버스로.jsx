@@ -1,8 +1,6 @@
 // Photoshop Artboard to Regular Canvas Script (Ultimate Fail-Proof Version)
 // 작성자: Antigravity
-// 기능: 기존 대지를 해제하는 대신, 똑같은 크기의 '일반 캔버스 새 파일'을 만들고
-//       모든 아트워크(레이어)를 완벽하게 복사해온 뒤, 원본을 닫습니다.
-// 해제/삭제 관련 포토샵 내부 버그를 완벽하게 회피하는 방식입니다.
+// 기능: 기존 대지를 해제하고 일반 캔버스로 변환하며 기존 폴더 구조를 유지하고 원본에 그대로 덮어쓰기 저장합니다.
 
 #target photoshop
 
@@ -30,7 +28,7 @@ function main() {
 
         try {
             app.activeDocument = doc;
-            if (convertByDuplication(doc)) {
+            if (convertInPlace(doc)) {
                 processedCount++;
             }
         } catch (e) {
@@ -45,80 +43,57 @@ function main() {
     alert("작업 완료!\n총 " + processedCount + "개의 문서가 일반 캔버스로 안전하게 변환되었습니다.");
 }
 
-function convertByDuplication(doc) {
+function convertInPlace(doc) {
     // 1. 대지가 있는지 먼저 확인
     var artboards = [];
     findArtboardsRecursive(doc, artboards);
 
     if (artboards.length === 0) {
-        return false; // 대지가 없으면 건너뜐
+        return false; // 대지가 없으면 건너뜀
     }
 
-    // 2. 전체 문서의 영역 계산 (가장 큰 영역 기준)
-    var docWidth = doc.width.value;
-    var docHeight = doc.height.value;
-    var resolution = doc.resolution;
-    var docName = doc.name;
-    var docPath = "";
+    // 2. 대지들의 정확한 전체 영역(Bounds)을 계산
+    var abRect = getArtboardsRect(artboards);
 
-    try {
-        docPath = doc.fullName; // 저장된 파일이면 경로 기억
-    } catch (e) { }
+    // 3. 각 대지 변환 처리
+    // 사용자가 대지를 항상 분리해서 작업한다고 하셨으므로, 
+    // 대지가 하나일 경우와 여러 개일 경우를 나누어 처리합니다.
+    for (var abIdx = artboards.length - 1; abIdx >= 0; abIdx--) {
+        var ab = artboards[abIdx];
 
-    // 3. 완전히 똑같은 설정의 '새 일반 문서' 생성 (대지 아님)
-    var newDoc = app.documents.add(docWidth, docHeight, resolution, docName, NewDocumentMode.RGB, DocumentFill.TRANSPARENT);
+        try { ab.visible = true; } catch (e) { }
+        try { ab.allLocked = false; } catch (e) { }
 
-    // 4. 다시 원본 문서로 이동
-    app.activeDocument = doc;
-
-    // 5. 숨겨진 레이어를 포함해 모든 최상단 레이어/그룹을 새 문서로 복제 (순서 완벽 유지)
-    var layersToDuplicate = [];
-    for (var i = 0; i < doc.layers.length; i++) {
-        layersToDuplicate.push(doc.layers[i]);
-    }
-
-    // 맨 아래부터 복사해야 새 문서에서 위로 차곡차곡 쌓임
-    for (var k = layersToDuplicate.length - 1; k >= 0; k--) {
-        app.activeDocument = doc;
-        var layer = layersToDuplicate[k];
-
-        // 레이어를 새 문서로 복제
-        layer.duplicate(newDoc, ElementPlacement.PLACEATBEGINNING);
-    }
-
-    // 6. 새 문서로 포커스 이동 후, 복제 과정에서 딸려온 '대지 속성' 강제 파괴
-    app.activeDocument = newDoc;
-    var newArtboards = [];
-    findArtboardsRecursive(newDoc, newArtboards);
-
-    // 복제된 레이어셋에서 대지 속성을 박탈하기 전, 대지들의 정확한 전체 영역(Bounds)을 계산
-    var abRect = getArtboardsRect(newArtboards);
-
-    // 각 대지별로 속성 박탈 및 배경색 생성
-    for (var abIdx = 0; abIdx < newArtboards.length; abIdx++) {
-        var ab = newArtboards[abIdx];
         var rect = getArtboardRect(ab);
         var colorInfo = getArtboardColor(ab);
 
-        // 대지 자체에 색상이 지정되어 있다면 레이어 그룹 가장 아래에 해당 색상의 사각형 레이어 생성
+        // 배경색 레이어 생성
         if (colorInfo && colorInfo.hasColor && rect) {
             createColorLayerAtBottom(ab, rect, colorInfo);
         }
 
-        // 복제된 레이어셋에서 대지 속성을 완전히 박탈 (단순 그룹화)
-        removeArtboardData(ab);
+        // 대지 속성 제거 및 원래 폴더 형태(그룹) 유지
+        var isOnlyArtboard = (artboards.length === 1);
+        removeArtboardData(ab, isOnlyArtboard);
     }
 
-    // 위치 튜닝: 기존의 revealAll()은 보이지 않는 레이어 범위까지 캔버스를 임의로 확장시키는 버그의 원인!
-    // 대신 추출한 대지의 실제 크기로 문서 창을 정확히 크롭(Crop) 합니다.
+    // 4. 투명 영역/보이지 않는 영역 제외하고 대지 크기로 정밀 크롭
     try {
         if (abRect) {
-            newDoc.crop(abRect);
+            var cropBounds = [
+                new UnitValue(abRect[0], "px"),
+                new UnitValue(abRect[1], "px"),
+                new UnitValue(abRect[2], "px"),
+                new UnitValue(abRect[3], "px")
+            ];
+            doc.crop(cropBounds);
         }
     } catch (e) { }
 
-    // 7. 원본 문서 닫기 (저장하지 않음 - 원본 보호)
-    doc.close(SaveOptions.DONOTSAVECHANGES);
+    // 5. 원본 파일 덮어쓰기
+    try {
+        doc.save();
+    } catch (e) { }
 
     return true;
 }
@@ -142,42 +117,122 @@ function isArtboard(layer) {
         var ref = new ActionReference();
         ref.putIdentifier(stringIDToTypeID("layer"), layer.id);
         var desc = executeActionGet(ref);
-        return (desc.hasKey(stringIDToTypeID("artboard")) || desc.hasKey(stringIDToTypeID("artboardEnabled")));
+        
+        if (desc.hasKey(stringIDToTypeID("artboard"))) {
+            return true;
+        }
+        if (desc.hasKey(stringIDToTypeID("artboardEnabled"))) {
+            return desc.getBoolean(stringIDToTypeID("artboardEnabled"));
+        }
+        return false;
     } catch (e) {
         return false;
     }
 }
 
-function removeArtboardData(layerSet) {
-    // Action Manager를 통해 폴더(LayerSet)의 대지 메타데이터만 날리고 일반 폴더로 전락시킴
-    // 'Ungroup' 명령을 쓰지 않고 데이터를 덧씌우는 해킹 기법
+function removeArtboardData(layerSet, isOnlyArtboard) {
     try {
-        app.activeDocument.activeLayer = layerSet;
-        var idsetd = charIDToTypeID("setd");
-        var desc = new ActionDescriptor();
-        var idnull = charIDToTypeID("null");
-        var ref = new ActionReference();
-        var idLyr = charIDToTypeID("Lyr ");
-        var idOrdn = charIDToTypeID("Ordn");
-        var idTrgt = charIDToTypeID("Trgt");
-        ref.putEnumerated(idLyr, idOrdn, idTrgt);
-        desc.putReference(idnull, ref);
+        var doc = app.activeDocument;
+        var originalName = layerSet.name;
+        var artboardId = layerSet.id;
+        
+        // 1. 내부 레이어들의 클리핑 마스크 상태와 ID 기억
+        var layersInfo = [];
+        var hasLayers = layerSet.layers.length > 0;
+        for (var i = 0; i < layerSet.layers.length; i++) {
+            layersInfo.push({
+                id: layerSet.layers[i].id,
+                isClipped: layerSet.layers[i].grouped
+            });
+        }
 
-        var idT = charIDToTypeID("T   ");
-        var layerDesc = new ActionDescriptor();
+        // 2. 레이어 스타일(효과)이 있는지 확인
+        var hasEffects = false;
+        try {
+            var ref = new ActionReference();
+            ref.putIdentifier(stringIDToTypeID("layer"), artboardId);
+            var desc = executeActionGet(ref);
+            hasEffects = desc.hasKey(stringIDToTypeID("layerEffects"));
+        } catch(e) {}
 
-        // artboardEnabled를 false로 명시적 선언
-        var idartboardEnabled = stringIDToTypeID("artboardEnabled");
-        layerDesc.putBoolean(idartboardEnabled, false);
+        // 3. 효과가 있다면 미리 복사
+        if (hasEffects) {
+            selectLayerById(artboardId); // 다중 선택 해제 및 대지만 정확하게 선택
+            try {
+                executeAction(stringIDToTypeID("copyLayerStyle"), undefined, DialogModes.NO);
+            } catch(e) {}
+        }
 
-        // 널(빈) artboard 객체 덮어쓰기
-        var idartboard = stringIDToTypeID("artboard");
-        var artboardDesc = new ActionDescriptor();
-        layerDesc.putObject(idartboard, idartboard, artboardDesc);
+        // 투명도와 블렌드 모드 사전 저장 (아트보드 자체가 가진 속성 보존)
+        var originalOpacity = 100;
+        var originalBlendMode = BlendMode.NORMAL;
+        try {
+            originalOpacity = layerSet.opacity;
+            originalBlendMode = layerSet.blendMode;
+        } catch(e) {}
 
-        desc.putObject(idT, idLyr, layerDesc);
-        executeAction(idsetd, desc, DialogModes.NO);
-    } catch (e) { }
+        // 4. 대지 해제 (Ungroup Artboard)
+        selectLayerById(artboardId); // 다중 선택 해제 및 정확한 선택 (내부 요소를 같이 언그룹하는 버그 방지)
+        var idungroupLayersEvent = stringIDToTypeID("ungroupLayersEvent");
+        var desc1 = new ActionDescriptor();
+        var ref1 = new ActionReference();
+        ref1.putEnumerated(stringIDToTypeID("layer"), stringIDToTypeID("ordinal"), stringIDToTypeID("targetEnum"));
+        desc1.putReference(stringIDToTypeID("null"), ref1);
+        executeAction(idungroupLayersEvent, desc1, DialogModes.NO);
+
+        // 5. 대지가 여러 개일 때만 재그룹화. 대지가 1개일 경우 전체가 하나의 폴더로 묶이는 것을 방지.
+        if (hasLayers && !isOnlyArtboard) {
+            var idMk = stringIDToTypeID("make");
+            var desc2 = new ActionDescriptor();
+            var ref2 = new ActionReference();
+            ref2.putClass(stringIDToTypeID("layerSection"));
+            desc2.putReference(stringIDToTypeID("null"), ref2);
+            var ref3 = new ActionReference();
+            ref3.putEnumerated(stringIDToTypeID("layer"), stringIDToTypeID("ordinal"), stringIDToTypeID("targetEnum"));
+            desc2.putReference(stringIDToTypeID("from"), ref3);
+            var desc3 = new ActionDescriptor();
+            desc3.putString(stringIDToTypeID("name"), originalName);
+            desc2.putObject(stringIDToTypeID("using"), stringIDToTypeID("layerSection"), desc3);
+            executeAction(idMk, desc2, DialogModes.NO);
+
+            // 투명도와 블렌드 모드 복구
+            try {
+                doc.activeLayer.opacity = originalOpacity;
+                doc.activeLayer.blendMode = originalBlendMode;
+            } catch(e) {}
+
+            // 효과 붙여넣기 (기존 효과가 있었던 경우에만)
+            if (hasEffects) {
+                try {
+                    executeAction(stringIDToTypeID("pasteLayerStyle"), undefined, DialogModes.NO);
+                } catch(e) {}
+            }
+        }
+
+        // 6. 클리핑 마스크 수동 복원 (Layer ID 기반으로 정확하게)
+        for (var j = 0; j < layersInfo.length; j++) {
+            if (layersInfo[j].isClipped) {
+                try {
+                    selectLayerById(layersInfo[j].id);
+                    if (!doc.activeLayer.grouped) {
+                        doc.activeLayer.grouped = true;
+                    }
+                } catch(e) {}
+            }
+        }
+        
+    } catch (e) { 
+        // alert("변환 중 에러: " + e.message);
+    }
+}
+
+function selectLayerById(id) {
+    var ref = new ActionReference();
+    ref.putIdentifier(charIDToTypeID("Lyr "), id);
+    var desc = new ActionDescriptor();
+    desc.putReference(charIDToTypeID("null"), ref);
+    desc.putBoolean(stringIDToTypeID("makeVisible"), false);
+    executeAction(charIDToTypeID("slct"), desc, DialogModes.NO);
 }
 
 function getArtboardColor(layer) {
@@ -235,11 +290,21 @@ function createColorLayerAtBottom(parentGroup, rect, colorInfo) {
             var lastIdx = length - 1;
             var lastLayer = parentGroup.layers[lastIdx];
             if (bgLayer.id !== lastLayer.id) {
-                bgLayer.move(lastLayer, ElementPlacement.PLACEAFTER);
+                var wasLocked = false;
+                try {
+                    wasLocked = lastLayer.allLocked;
+                    if (wasLocked) lastLayer.allLocked = false;
+                } catch(e) {}
+                
+                try { bgLayer.move(lastLayer, ElementPlacement.PLACEAFTER); } catch(e) { }
+                
+                try {
+                    if (wasLocked) lastLayer.allLocked = true;
+                } catch(e) {}
             }
         }
 
-        // 선택 영역을 대지의 좌표만큼 지정 (newDoc은 여전히 원래 문서 좌표계와 동일)
+        // 선택 영역을 대지의 좌표만큼 지정
         var selRegion = [
             [rect[0], rect[1]],
             [rect[2], rect[1]],
@@ -253,6 +318,9 @@ function createColorLayerAtBottom(parentGroup, rect, colorInfo) {
         solidColor.rgb.red = colorInfo.r;
         solidColor.rgb.green = colorInfo.g;
         solidColor.rgb.blue = colorInfo.b;
+
+        // move 이후에 활성 레이어가 부모 그룹 등 다른 영역으로 강제 변경되는 PS 내부 버그 방지
+        app.activeDocument.activeLayer = bgLayer;
 
         app.activeDocument.selection.fill(solidColor);
         app.activeDocument.selection.deselect();

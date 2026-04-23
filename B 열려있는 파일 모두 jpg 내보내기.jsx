@@ -41,10 +41,16 @@ try {
                     tempDoc.bitsPerChannel = BitsPerChannelType.EIGHT;
                 }
 
-                // 4. 파일명 및 경로 설정
+                // 4. 파일명 및 경로 설정, 폴더 생성
                 var docPath = doc.path;
                 var docName = doc.name.replace(/\.[^\.]+$/, ""); // 확장자 제거
-                var saveFile = new File(docPath + "/" + docName + ".jpg");
+                
+                var exportFolder = new Folder(docPath + "/JPG");
+                if (!exportFolder.exists) {
+                    exportFolder.create();
+                }
+                
+                var saveFile = new File(exportFolder + "/" + docName + ".jpg");
 
                 // 5. JPG 저장 옵션 설정
                 var jpgOptions = new JPEGSaveOptions();
