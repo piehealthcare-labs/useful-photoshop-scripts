@@ -1,13 +1,6 @@
-#targetengine "resizeArtboardEngine"
+#target photoshop
 
 app.bringToFront();
-
-// 이미 팔레트가 열려있다면 닫기 (중복 실행 방지)
-if (typeof globalArtboardPalette !== "undefined" && globalArtboardPalette !== null) {
-    try { globalArtboardPalette.close(); } catch(e){}
-}
-
-var globalArtboardPalette;
 
 function isArtboard(layer) {
     try {
@@ -103,7 +96,7 @@ function processResizeSingleArtboard(doc, artboardLayer, originalUnit) {
     var bounds = artboardLayer.bounds; 
     var currentWidth = bounds[2].value - bounds[0].value;
     
-    var userInput = prompt("선택된 아트보드: [" + artboardLayer.name + "]\n어떤 사이즈(가로px)로 수정하겠습니까?\n수치를 입력하시면 비율에 맞게 아트보드 내 모든 작업물이 조절됩니다.\n\n현재 가로 사이즈: " + Math.round(currentWidth) + "px", Math.round(currentWidth), "아트보드 크기 비율 조절");
+    var userInput = prompt("선택된 아트보드: [" + artboardLayer.name + "]\n어떤 사이즈(가로px)로 수정하겠습니까?\n수치를 입력하시면 비율에 맞게 조절됩니다.\n\n현재 가로 사이즈: " + Math.round(currentWidth) + "px", Math.round(currentWidth), "아트보드 크기 비율 조절");
 
     if (userInput === null || userInput === "") {
         app.preferences.rulerUnits = originalUnit;
@@ -135,18 +128,33 @@ function processResizeSingleArtboard(doc, artboardLayer, originalUnit) {
     }
 }
 
-function showPalette(doc, originalUnit) {
-    globalArtboardPalette = new Window("palette", "아트보드 선택", undefined, {closeButton: true});
-    var w = globalArtboardPalette;
+function showDialogAndProcess(doc, originalUnit, artboards) {
+    // 만약 사용자가 이미 특정 아트보드를 클릭(선택)해둔 상태라면, 그 아트보드를 기본값으로 선택
+    var targetArtboard = null;
+    try {
+        targetArtboard = getParentArtboard(app.activeDocument.activeLayer);
+    } catch(e) {}
+    
+    var w = new Window("dialog", "아트보드 선택");
     w.orientation = "column";
     w.alignChildren = "center";
     w.margins = 20;
     
-    var textGroup = w.add("group");
-    textGroup.orientation = "column";
-    textGroup.alignChildren = "center";
-    textGroup.add("statictext", undefined, "사이즈를 조정할 아트보드를 선택해주세요.");
-    textGroup.add("statictext", undefined, "(캔버스에서 아트보드를 클릭한 후 아래 [선택 완료] 클릭)");
+    w.add("statictext", undefined, "문서에 여러 개의 아트보드가 있습니다.");
+    w.add("statictext", undefined, "크기를 조절할 아트보드를 아래 목록에서 선택해주세요.");
+    
+    var dropdown = w.add("dropdownlist", undefined, []);
+    var selectedIndex = 0;
+    
+    for (var i = 0; i < artboards.length; i++) {
+        dropdown.add("item", artboards[i].name);
+        // 이미 캔버스에서 선택한 아트보드라면 목록에서 자동으로 활성화되게 처리
+        if (targetArtboard && artboards[i].name === targetArtboard.name) {
+            selectedIndex = i;
+        }
+    }
+    dropdown.selection = selectedIndex;
+    dropdown.preferredSize.width = 250;
     
     var btnGroup = w.add("group");
     btnGroup.margins.top = 10;
@@ -154,24 +162,22 @@ function showPalette(doc, originalUnit) {
     var btnCancel = btnGroup.add("button", undefined, "취소");
     
     btnOk.onClick = function() {
-        w.close();
-        
-        var targetArtboard = getParentArtboard(app.activeDocument.activeLayer);
-        if (!targetArtboard) {
-            alert("선택된 아트보드가 없습니다.\n다시 실행하여 조절할 아트보드를 정확히 선택해주세요.");
-            app.preferences.rulerUnits = originalUnit;
-            return;
-        }
-        
-        processResizeSingleArtboard(app.activeDocument, targetArtboard, originalUnit);
+        w.close(1);
     };
     
     btnCancel.onClick = function() {
-        w.close();
-        app.preferences.rulerUnits = originalUnit;
+        w.close(0);
     };
     
-    w.show();
+    // 모달 다이얼로그 표시 (사용자가 버튼을 누를 때까지 대기)
+    var result = w.show();
+    
+    if (result === 1) {
+        var selectedArtboard = artboards[dropdown.selection.index];
+        processResizeSingleArtboard(doc, selectedArtboard, originalUnit);
+    } else {
+        app.preferences.rulerUnits = originalUnit;
+    }
 }
 
 function main() {
@@ -187,7 +193,7 @@ function main() {
     var artboards = getRootArtboards(doc);
 
     if (artboards.length > 1) {
-        showPalette(doc, originalUnit);
+        showDialogAndProcess(doc, originalUnit, artboards);
     } else {
         processResizeWholeDocument(doc, originalUnit);
     }
