@@ -1,12 +1,36 @@
-﻿#target photoshop
+#target photoshop
 app.displayDialogs = DialogModes.NO;
 
-function getDateString() {
+function getDateStringFallback() {
     var now = new Date();
     var yy = String(now.getFullYear()).slice(-2);
     var mm = ("0" + (now.getMonth() + 1)).slice(-2);
     var dd = ("0" + now.getDate()).slice(-2);
     return yy + mm + dd;
+}
+
+function getDateString(doc) {
+    try {
+        var parentFolder = doc.path.parent;
+        var proposalFolder = new Folder(parentFolder + "/첨부/기획서");
+
+        if (proposalFolder.exists) {
+            var files = proposalFolder.getFiles(function (f) {
+                return (f instanceof File) && f.name.match(/\.pptx?$/i);
+            });
+
+            if (files.length > 0) {
+                var fileName = decodeURI(files[0].name);
+                var match = fileName.match(/^(\d+)/);
+                if (match) {
+                    return match[1]; // 연속된 숫자(날짜) 반환
+                }
+            }
+        }
+    } catch (e) {
+        // 파일이 아직 저장되지 않았거나 폴더가 없는 경우 무시하고 현재 날짜로 폴백
+    }
+    return getDateStringFallback();
 }
 
 function isArtboard(layerSet) {
@@ -51,12 +75,12 @@ if (app.documents.length === 0) {
     alert("열려 있는 문서가 없습니다.");
 } else {
     var doc = app.activeDocument;
-    var dateStr = getDateString();
+    var dateStr = getDateString(doc);
     var artboards = [];
 
     for (var i = 0; i < doc.layerSets.length; i++) {
         if (isArtboard(doc.layerSets[i])) {
-            artboards.push(doc.layerSets[i].name);
+            artboards.push(doc.layerSets[i]); // 레이어 객체 자체를 저장
         }
     }
 
@@ -65,25 +89,38 @@ if (app.documents.length === 0) {
     } else {
         var saveFolder = doc.path || Folder.desktop;
 
+        // 이름 등장 횟수를 추적하는 객체
+        var nameCountMap = {};
+
+        // 1패스: 각 이름이 몇 번 등장하는지 미리 카운트
         for (var i = 0; i < artboards.length; i++) {
-            var abName = artboards[i];
-            var abLayer = null;
+            var n = artboards[i].name;
+            nameCountMap[n] = (nameCountMap[n] || 0) + 1;
+        }
 
-            for (var j = 0; j < doc.layerSets.length; j++) {
-                if (doc.layerSets[j].name === abName && isArtboard(doc.layerSets[j])) {
-                    abLayer = doc.layerSets[j];
-                    break;
-                }
-            }
+        // 저장 시 순서대로 번호 부여를 위한 누적 카운터
+        var nameIndexMap = {};
 
-            if (!abLayer) continue;
+        for (var i = 0; i < artboards.length; i++) {
+            var abLayer = artboards[i];
+            var abName = abLayer.name;
 
             var size = getArtboardRect(abLayer);
-            var sizeStr = size.width + "x" + size.height + "px";
+            var sizeStr = (size.width === 860 && size.height >= 2000) ? "860px" : (size.width + "x" + size.height + "px");
             var cleanName = abName.replace(/\s+/g, "");
-            var filename = dateStr + "_" + cleanName + "_" + sizeStr + ".psd";
 
-            var dupDoc = doc.duplicate(dateStr + "_" + cleanName);
+            // 같은 이름이 2개 이상이면 _01, _02... 형식으로 번호 추가
+            var suffix = "";
+            if (nameCountMap[abName] > 1) {
+                nameIndexMap[abName] = (nameIndexMap[abName] || 0) + 1;
+                var idx = nameIndexMap[abName];
+                suffix = "_" + (idx < 10 ? "0" + idx : String(idx));
+            }
+
+            var filename = dateStr + "_" + cleanName + suffix + "_" + sizeStr + ".psd";
+            var dupTitle = dateStr + "_" + cleanName + suffix;
+
+            var dupDoc = doc.duplicate(dupTitle);
 
             for (var k = dupDoc.layerSets.length - 1; k >= 0; k--) {
                 var ls = dupDoc.layerSets[k];

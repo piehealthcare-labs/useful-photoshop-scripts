@@ -1,4 +1,4 @@
-﻿#target photoshop
+#target photoshop
 app.displayDialogs = DialogModes.NO;
 
 // 룰러 단위를 픽셀로 고정
@@ -41,11 +41,11 @@ try {
                     tempDoc.bitsPerChannel = BitsPerChannelType.EIGHT;
                 }
 
-                // 4. 파일명 및 경로 설정, 폴더 생성
+                // 4. 파일명 및 경로 설정
                 var docPath = doc.path;
                 var docName = doc.name.replace(/\.[^\.]+$/, ""); // 확장자 제거
                 
-                var exportFolder = new Folder(docPath + "/JPG");
+                var exportFolder = new Folder(docPath.parent + "/시안");
                 if (!exportFolder.exists) {
                     exportFolder.create();
                 }

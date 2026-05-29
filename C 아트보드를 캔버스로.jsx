@@ -1,4 +1,4 @@
-﻿// Photoshop Artboard to Regular Canvas Script (Ultimate Fail-Proof Version)
+// Photoshop Artboard to Regular Canvas Script (Ultimate Fail-Proof Version)
 // 작성자: Antigravity
 // 기능: 기존 대지를 해제하고 일반 캔버스로 변환하며 기존 폴더 구조를 유지하고 원본에 그대로 덮어쓰기 저장합니다.
 
@@ -58,6 +58,8 @@ function convertInPlace(doc) {
     // 3. 각 대지 변환 처리
     // 사용자가 대지를 항상 분리해서 작업한다고 하셨으므로, 
     // 대지가 하나일 경우와 여러 개일 경우를 나누어 처리합니다.
+    var bgLayerIds = []; // 배경 레이어 ID 목록 (ungroup 후 재정렬용)
+
     for (var abIdx = artboards.length - 1; abIdx >= 0; abIdx--) {
         var ab = artboards[abIdx];
 
@@ -67,14 +69,23 @@ function convertInPlace(doc) {
         var rect = getArtboardRect(ab);
         var colorInfo = getArtboardColor(ab);
 
-        // 배경색 레이어 생성
+        // 배경색 레이어 생성 → 생성된 레이어 ID 보관
         if (colorInfo && colorInfo.hasColor && rect) {
-            createColorLayerAtBottom(ab, rect, colorInfo);
+            var bgId = createColorLayerAtBottom(ab, rect, colorInfo);
+            if (bgId !== null) bgLayerIds.push(bgId);
         }
 
         // 대지 속성 제거 및 원래 폴더 형태(그룹) 유지
         var isOnlyArtboard = (artboards.length === 1);
         removeArtboardData(ab, isOnlyArtboard);
+    }
+
+    // 3-1. ungroup 완료 후 배경 레이어들을 문서 맨 아래로 재배치
+    //      (ungroup 과정에서 포토샵이 레이어 순서를 재정렬하는 버그 대응)
+    for (var bgIdx = 0; bgIdx < bgLayerIds.length; bgIdx++) {
+        try {
+            moveLayerToDocumentBottom(bgLayerIds[bgIdx], doc);
+        } catch (e) { }
     }
 
     // 4. 투명 영역/보이지 않는 영역 제외하고 대지 크기로 정밀 크롭
@@ -283,6 +294,7 @@ function createColorLayerAtBottom(parentGroup, rect, colorInfo) {
         // 새 레이어를 대상 대지 그룹 가장 위에 생성 (기본동작)
         var bgLayer = parentGroup.artLayers.add();
         bgLayer.name = "대지 배경색";
+        var bgLayerId = bgLayer.id; // ID 기억 (ungroup 후 재정렬에 사용)
 
         // 맨 아래로 옮기기 위해 현재 맨 아랫단 레이어 뒤로 이동
         var length = parentGroup.layers.length;
@@ -326,6 +338,37 @@ function createColorLayerAtBottom(parentGroup, rect, colorInfo) {
         app.activeDocument.selection.deselect();
 
         app.activeDocument.activeLayer = originalActiveLayer;
+
+        return bgLayerId; // ID 반환 (ungroup 후 재배치에 사용)
+    } catch (e) {
+        return null;
+    }
+}
+
+// ungroup 완료 후 배경 레이어를 문서 전체 레이어 스택의 맨 아래로 이동
+function moveLayerToDocumentBottom(layerId, doc) {
+    try {
+        // 대상 레이어 선택
+        selectLayerById(layerId);
+        var targetLayer = doc.activeLayer;
+
+        // 문서 최하단 레이어 구하기
+        var allLayers = doc.layers;
+        var bottomLayer = allLayers[allLayers.length - 1];
+
+        if (targetLayer.id === bottomLayer.id) return; // 이미 맨 아래
+
+        var wasLocked = false;
+        try {
+            wasLocked = bottomLayer.allLocked;
+            if (wasLocked) bottomLayer.allLocked = false;
+        } catch(e) {}
+
+        targetLayer.move(bottomLayer, ElementPlacement.PLACEAFTER);
+
+        try {
+            if (wasLocked) bottomLayer.allLocked = true;
+        } catch(e) {}
     } catch (e) { }
 }
 
